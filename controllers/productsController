@@ -1,0 +1,196 @@
+
+// const User = require('../models/User');
+// const Product = require('../models/Product');
+// const fs = require('fs');
+// const { v4: uuidv4 } = require('uuid'); 
+// const mongoose = require('mongoose');
+// const HttpError = require('../models/http-error');
+// const { validationResult } = require('express-validator');
+// const multer = require('multer');
+
+// // Multer Configuration
+// const storage = multer.diskStorage({
+//     destination: function (req, file, cb) {
+//         cb(null, 'uploads/images');  // Ensure this folder exists
+//     },
+//     filename: function (req, file, cb) {
+//         cb(null, Date.now() + '-' + file.originalname);  // Generates unique filename using timestamp
+//     }
+// });
+
+// const upload = multer({ storage: storage });
+
+// // Create Product Controller
+// const createProduct = async (req, res, next) => {
+//     const { title, description, quantity, unit, price, category } = req.body;
+
+//     let vendor;
+//     try {
+//         vendor = await User.findById(req.vendorId);  // Corrected user ID reference
+//     } catch (err) {
+//         const error = new HttpError('Creating product failed, please try again.', 500);
+//         return next(error);
+//     }
+
+//     if (!vendor) {
+//         const error = new HttpError('Could not find user for provided ID.', 404);
+//         return next(error);
+//     }
+
+//     try {
+//         const newProduct = new Product({
+//             title,
+//             description,
+//             image: req.file ? req.file.path : '',  // Safely accessing image path
+//             quantity,
+//             unit,
+//             price,
+//             category,
+//             vendor: vendor._id
+//         });
+
+//         await newProduct.save();
+//         res.status(201).json({ msg: 'Product created successfully' });
+//     } catch (error) {
+//         res.status(500).json({ msg: 'Server error' });
+//     }
+// };
+
+
+const User = require('../models/User');
+const Product = require('../models/Product');
+const multer = require('multer');
+const mongoose = require('mongoose');
+const HttpError = require('../models/http-error');
+const fs=require('fs');
+// Multer Configuration
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, 'uploads/images'),
+    filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
+});
+const upload = multer({ storage });
+
+// Create Product Controller
+const createProduct = async (req, res, next) => {
+    const { title, description, quantity, unit, price, category } = req.body;
+
+    try {
+        const user = req.user;  // ✅ Access the user directly from the middleware
+        if (!user) {
+            return res.status(404).json({ message: 'Could not find user for provided ID' });
+        }
+
+        const newProduct = new Product({
+            title,
+            description,
+            image: req.file ? req.file.path : '',  // Image handling
+            quantity,
+            unit,
+            price,
+            category,
+            user: user._id  // Assign the user ID
+        });
+
+        const savedProduct = await newProduct.save();
+        user.products.push(savedProduct);  // Update the user's products
+        await user.save();
+        res.status(201).json({ msg: 'Product created successfully' });
+    } catch (error) {
+        res.status(500).json({ msg: 'Server error', error: error.message });
+    }
+};
+
+
+const getProductById = async (req, res, next) => {
+    const productId = req.params.pid;
+  
+    let product;
+    try {
+      product = await Product.findById(productId);
+    } catch (err) {
+      const error = new HttpError(
+        'Something went wrong, could not find a product.',
+        500
+      );
+      return next(error);
+    }
+  
+    if (!product) {
+      const error = new HttpError(
+        'Could not find a product for the provided id.',
+        404
+      );
+      return next(error);
+    }
+  
+    res.json({ product: product.toObject({ getters: true }) });
+  };
+
+// const deleteProduct = async (req, res, next) => {
+//   const productId = req.params.pid;
+
+//   let product;
+//   try {
+//     product = await Product.findById(productId).populate('user');
+//   } catch (err) {
+//     const error = new HttpError(
+//       'Something went wrong, could not delete product.',
+//       500
+//     );
+//     return next(error);
+//   }
+//   if (!product) {
+//     const error = new HttpError('Could not find product for this id.', 404);
+//     return next(error);
+//   }
+//   if (product.user.id !== req.user.id) {
+//     const error = new HttpError('You are not allowed to delete this product.', 401);
+//     return next(error);
+//   }
+//   const imagePath = product.image;
+//   try {
+//     const sess = await mongoose.startSession();
+//     sess.startTransaction();
+//     await product.remove({ session: sess });
+//     product.user.products.pull(product);
+//     await product.user.save({ session: sess });
+//     await sess.commitTransaction();
+//   } catch (err) {
+//     const error = new HttpError(
+//       'Something went wrong, could not delete product.',
+//       500
+//     );
+//     return next(error);
+//   }
+//   fs.unlink(imagePath, (err) => {
+//     console.log(err);
+//   });
+//   res.status(200).json({ message: 'Deleted product.' });
+// };
+
+
+const deleteProduct = async (req, res, next) => {
+  const productId = req.params.pid;
+
+  let delproduct;
+  try {
+    delproduct = await Product.findByIdAndDelete(productId);
+    if(!delproduct){
+      return res.status(404).json({ message: 'Product not found' });
+    }
+    return res.status(200).json({ message: 'Product deleted successfully' });
+  }
+  catch (err) {
+    const error = new HttpError(
+      'Something went wrong, could not delete product.',
+      500
+    );
+    return next(error);
+  }
+};
+
+
+module.exports = { createProduct };
+module.exports.upload = upload;
+module.exports.getProductById = getProductById;
+module.exports.deleteProduct = deleteProduct;
